@@ -20,6 +20,11 @@ import { RectangleManager } from '../services/managers/rectangle-manager';
 import { DataLayerManager } from './../services/managers/data-layer-manager';
 import { KmlLayerManager } from './../services/managers/kml-layer-manager';
 
+interface Emitter {
+  emit(value: any): void;
+}
+type Event = { name: string, emitter: Emitter };
+
 declare var google: any;
 
 /**
@@ -233,7 +238,7 @@ export class AgmMap implements OnChanges, OnInit, OnDestroy {
   /**
    * The initial enabled/disabled state of the Pan control.
    */
-  @Input() panControl  = false;
+  @Input() panControl = false;
 
   /**
    * Options for the Pan control.
@@ -253,7 +258,7 @@ export class AgmMap implements OnChanges, OnInit, OnDestroy {
   /**
    * The initial enabled/disabled state of the Fullscreen control.
    */
-  @Input() fullscreenControl  = false;
+  @Input() fullscreenControl = false;
 
   /**
    * Options for the Fullscreen control.
@@ -289,20 +294,20 @@ export class AgmMap implements OnChanges, OnInit, OnDestroy {
    */
   @Input() gestureHandling: 'cooperative' | 'greedy' | 'none' | 'auto' = 'auto';
 
-    /**
-     * Controls the automatic switching behavior for the angle of incidence of
-     * the map. The only allowed values are 0 and 45. The value 0 causes the map
-     * to always use a 0° overhead view regardless of the zoom level and
-     * viewport. The value 45 causes the tilt angle to automatically switch to
-     * 45 whenever 45° imagery is available for the current zoom level and
-     * viewport, and switch back to 0 whenever 45° imagery is not available
-     * (this is the default behavior). 45° imagery is only available for
-     * satellite and hybrid map types, within some locations, and at some zoom
-     * levels. Note: getTilt returns the current tilt angle, not the value
-     * specified by this option. Because getTilt and this option refer to
-     * different things, do not bind() the tilt property; doing so may yield
-     * unpredictable effects. (Default of AGM is 0 (disabled). Enable it with value 45.)
-     */
+  /**
+   * Controls the automatic switching behavior for the angle of incidence of
+   * the map. The only allowed values are 0 and 45. The value 0 causes the map
+   * to always use a 0° overhead view regardless of the zoom level and
+   * viewport. The value 45 causes the tilt angle to automatically switch to
+   * 45 whenever 45° imagery is available for the current zoom level and
+   * viewport, and switch back to 0 whenever 45° imagery is not available
+   * (this is the default behavior). 45° imagery is only available for
+   * satellite and hybrid map types, within some locations, and at some zoom
+   * levels. Note: getTilt returns the current tilt angle, not the value
+   * specified by this option. Because getTilt and this option refer to
+   * different things, do not bind() the tilt property; doing so may yield
+   * unpredictable effects. (Default of AGM is 0 (disabled). Enable it with value 45.)
+   */
   @Input() tilt = 0;
 
   /**
@@ -379,13 +384,26 @@ export class AgmMap implements OnChanges, OnInit, OnDestroy {
    */
   @Output() tilesLoaded: EventEmitter<void> = new EventEmitter<void>();
 
+
+  @Output() drag: EventEmitter<void> = new EventEmitter<void>();
+
+  /**
+   * This event is fired when the user begins to drag the map.
+   */
+  @Output() dragStart: EventEmitter<void> = new EventEmitter<void>();
+
+  /**
+   * This event is fired when the user stopped dragging the map.
+   */
+  @Output() dragEnd: EventEmitter<void> = new EventEmitter<void>();
+
   constructor(
     private _elem: ElementRef,
     private _mapsWrapper: GoogleMapsAPIWrapper,
     @Inject(PLATFORM_ID) private _platformId: Object,
     protected _fitBoundsService: FitBoundsService,
     private _zone: NgZone
-  ) {}
+  ) { }
 
   /** @internal */
   ngOnInit() {
@@ -400,7 +418,7 @@ export class AgmMap implements OnChanges, OnInit, OnDestroy {
 
   private _initMapInstance(el: HTMLElement) {
     this._mapsWrapper.createMap(el, {
-      center: {lat: this.latitude || 0, lng: this.longitude || 0},
+      center: { lat: this.latitude || 0, lng: this.longitude || 0 },
       zoom: this.zoom,
       minZoom: this.minZoom,
       maxZoom: this.maxZoom,
@@ -445,6 +463,7 @@ export class AgmMap implements OnChanges, OnInit, OnDestroy {
     this._handleMapTypeIdChange();
     this._handleTilesLoadedEvent();
     this._handleIdleEvent();
+    this._handleMapEventsWithoutParams();
   }
 
   /** @internal */
@@ -466,7 +485,7 @@ export class AgmMap implements OnChanges, OnInit, OnDestroy {
   }
 
   private _updateMapOptionsChanges(changes: SimpleChanges) {
-    let options: {[propName: string]: any} = {};
+    let options: { [propName: string]: any } = {};
     let optionKeys =
       Object.keys(changes).filter(k => AgmMap._mapOptionsAttributes.indexOf(k) !== -1);
     optionKeys.forEach((k) => { options[k] = changes[k].currentValue; });
@@ -496,7 +515,7 @@ export class AgmMap implements OnChanges, OnInit, OnDestroy {
 
   private _updatePosition(changes: SimpleChanges) {
     if (changes['latitude'] == null && changes['longitude'] == null &&
-        !changes['fitBounds']) {
+      !changes['fitBounds']) {
       // no position update needed
       return;
     }
@@ -573,7 +592,7 @@ export class AgmMap implements OnChanges, OnInit, OnDestroy {
       this._mapsWrapper.getCenter().then((center: LatLng) => {
         this.latitude = center.lat();
         this.longitude = center.lng();
-        this.centerChange.emit({lat: this.latitude, lng: this.longitude} as LatLngLiteral);
+        this.centerChange.emit({ lat: this.latitude, lng: this.longitude } as LatLngLiteral);
       });
     });
     this._observableSubscriptions.push(s);
@@ -626,20 +645,20 @@ export class AgmMap implements OnChanges, OnInit, OnDestroy {
     type Event = { name: string, emitter: Emitter };
 
     const events: Event[] = [
-      {name: 'click', emitter: this.mapClick},
-      {name: 'rightclick', emitter: this.mapRightClick},
-      {name: 'dblclick', emitter: this.mapDblClick},
+      { name: 'click', emitter: this.mapClick },
+      { name: 'rightclick', emitter: this.mapRightClick },
+      { name: 'dblclick', emitter: this.mapDblClick },
     ];
 
     events.forEach((e: Event) => {
-      const s = this._mapsWrapper.subscribeToMapEvent<{latLng: LatLng}>(e.name).subscribe(
-        (event: {latLng: LatLng}) => {
+      const s = this._mapsWrapper.subscribeToMapEvent<{ latLng: LatLng }>(e.name).subscribe(
+        (event: { latLng: LatLng }) => {
           let value: MouseEvent = {
             coords: {
               lat: event.latLng.lat(),
               lng: event.latLng.lng(),
             },
-            placeId: (event as {latLng: LatLng, placeId: string}).placeId,
+            placeId: (event as { latLng: LatLng, placeId: string }).placeId,
           };
           // the placeId will be undefined in case the event was not an IconMouseEvent (google types)
           if (value.placeId && !this.showDefaultInfoWindow) {
@@ -647,6 +666,21 @@ export class AgmMap implements OnChanges, OnInit, OnDestroy {
           }
           e.emitter.emit(value);
         });
+      this._observableSubscriptions.push(s);
+    });
+  }
+
+  private _handleMapEventsWithoutParams() {
+    const events: Event[] = [
+      { name: 'drag', emitter: this.drag },
+      { name: 'dragstart', emitter: this.dragStart },
+      { name: 'dragend', emitter: this.dragEnd }
+    ];
+
+    events.forEach((e: Event) => {
+      const s = this._mapsWrapper.subscribeToMapEvent<void>(e.name).subscribe(
+        () => e.emitter.emit(void 0)
+      );
       this._observableSubscriptions.push(s);
     });
   }
